@@ -2,6 +2,7 @@
 
 #include "GameFramework/Character.h"
 #include "State/AlsLocomotionState.h"
+#include "State/AlsMantlingState.h"
 #include "State/AlsMovementBaseState.h"
 #include "State/AlsRagdollingState.h"
 #include "State/AlsRollingState.h"
@@ -34,7 +35,7 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings|Als Character|Desired State",
 		ReplicatedUsing = "OnReplicated_DesiredAiming")
-	bool bDesiredAiming;
+	uint8 bDesiredAiming : 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Settings|Als Character|Desired State", Replicated)
 	FGameplayTag DesiredRotationMode{AlsRotationModeTags::ViewDirection};
@@ -73,7 +74,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient)
 	FAlsMovementBaseState MovementBase;
 
-	// Replicated raw view rotation. In most cases, it's better to use FAlsViewState::Rotation to take advantage of network smoothing.
+	// Replicated raw view rotation. Depending on the context, this rotation can be in world space, or in movement
+	// base space. In most cases, it is better to use FAlsViewState::Rotation to take advantage of network smoothing.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient,
 		ReplicatedUsing = "OnReplicated_ReplicatedViewRotation")
 	FRotator ReplicatedViewRotation;
@@ -92,10 +94,10 @@ protected:
 	FAlsLocomotionState LocomotionState;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient)
-	int32 MantlingRootMotionSourceId;
+	FAlsMantlingState MantlingState;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient, Replicated)
-	FVector_NetQuantize100 RagdollTargetLocation;
+	FVector_NetQuantize RagdollTargetLocation;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient)
 	FAlsRagdollingState RagdollingState;
@@ -116,6 +118,8 @@ public:
 
 	virtual void PreRegisterAllComponents() override;
 
+	virtual void PostRegisterAllComponents() override;
+
 	virtual void PostInitializeComponents() override;
 
 protected:
@@ -133,9 +137,7 @@ public:
 	virtual void Restart() override;
 
 private:
-	void RefreshUsingAbsoluteRotation() const;
-
-	void RefreshVisibilityBasedAnimTickOption() const;
+	void RefreshMeshProperties() const;
 
 	void RefreshMovementBase();
 
@@ -144,10 +146,15 @@ private:
 public:
 	const FGameplayTag& GetViewMode() const;
 
-	UFUNCTION(BlueprintCallable, Category = "ALS|Als Character", Meta = (AutoCreateRefTerm = "NewViewMode"))
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (AutoCreateRefTerm = "NewViewMode"))
 	void SetViewMode(const FGameplayTag& NewViewMode);
 
 private:
+	void SetViewMode(const FGameplayTag& NewViewMode, bool bSendRpc);
+
+	UFUNCTION(Client, Reliable)
+	void ClientSetViewMode(const FGameplayTag& NewViewMode);
+
 	UFUNCTION(Server, Reliable)
 	void ServerSetViewMode(const FGameplayTag& NewViewMode);
 
@@ -162,10 +169,8 @@ public:
 protected:
 	void SetLocomotionMode(const FGameplayTag& NewLocomotionMode);
 
-private:
-	void NotifyLocomotionModeChanged(const FGameplayTag& PreviousLocomotionMode);
+	virtual void NotifyLocomotionModeChanged(const FGameplayTag& PreviousLocomotionMode);
 
-protected:
 	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	void OnLocomotionModeChanged(const FGameplayTag& PreviousLocomotionMode);
 
@@ -174,10 +179,15 @@ protected:
 public:
 	bool IsDesiredAiming() const;
 
-	UFUNCTION(BlueprintCallable, Category = "ALS|Als Character")
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character")
 	void SetDesiredAiming(bool bNewDesiredAiming);
 
 private:
+	void SetDesiredAiming(bool bNewDesiredAiming, bool bSendRpc);
+
+	UFUNCTION(Client, Reliable)
+	void ClientSetDesiredAiming(bool bNewDesiredAiming);
+
 	UFUNCTION(Server, Reliable)
 	void ServerSetDesiredAiming(bool bNewDesiredAiming);
 
@@ -193,10 +203,15 @@ protected:
 public:
 	const FGameplayTag& GetDesiredRotationMode() const;
 
-	UFUNCTION(BlueprintCallable, Category = "ALS|Als Character", Meta = (AutoCreateRefTerm = "NewDesiredRotationMode"))
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (AutoCreateRefTerm = "NewDesiredRotationMode"))
 	void SetDesiredRotationMode(const FGameplayTag& NewDesiredRotationMode);
 
 private:
+	void SetDesiredRotationMode(const FGameplayTag& NewDesiredRotationMode, bool bSendRpc);
+
+	UFUNCTION(Client, Reliable)
+	void ClientSetDesiredRotationMode(const FGameplayTag& NewDesiredRotationMode);
+
 	UFUNCTION(Server, Reliable)
 	void ServerSetDesiredRotationMode(const FGameplayTag& NewDesiredRotationMode);
 
@@ -218,10 +233,15 @@ protected:
 public:
 	const FGameplayTag& GetDesiredStance() const;
 
-	UFUNCTION(BlueprintCallable, Category = "ALS|Als Character", Meta = (AutoCreateRefTerm = "NewDesiredStance"))
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (AutoCreateRefTerm = "NewDesiredStance"))
 	void SetDesiredStance(const FGameplayTag& NewDesiredStance);
 
 private:
+	void SetDesiredStance(const FGameplayTag& NewDesiredStance, bool bSendRpc);
+
+	UFUNCTION(Client, Reliable)
+	void ClientSetDesiredStance(const FGameplayTag& NewDesiredStance);
+
 	UFUNCTION(Server, Reliable)
 	void ServerSetDesiredStance(const FGameplayTag& NewDesiredStance);
 
@@ -251,10 +271,15 @@ protected:
 public:
 	const FGameplayTag& GetDesiredGait() const;
 
-	UFUNCTION(BlueprintCallable, Category = "ALS|Als Character", Meta = (AutoCreateRefTerm = "NewDesiredGait"))
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (AutoCreateRefTerm = "NewDesiredGait"))
 	void SetDesiredGait(const FGameplayTag& NewDesiredGait);
 
 private:
+	void SetDesiredGait(const FGameplayTag& NewDesiredGait, bool bSendRpc);
+
+	UFUNCTION(Client, Reliable)
+	void ClientSetDesiredGait(const FGameplayTag& NewDesiredGait);
+
 	UFUNCTION(Server, Reliable)
 	void ServerSetDesiredGait(const FGameplayTag& NewDesiredGait);
 
@@ -283,10 +308,15 @@ private:
 public:
 	const FGameplayTag& GetOverlayMode() const;
 
-	UFUNCTION(BlueprintCallable, Category = "ALS|Als Character", Meta = (AutoCreateRefTerm = "NewOverlayMode"))
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (AutoCreateRefTerm = "NewOverlayMode"))
 	void SetOverlayMode(const FGameplayTag& NewOverlayMode);
 
 private:
+	void SetOverlayMode(const FGameplayTag& NewOverlayMode, bool bSendRpc);
+
+	UFUNCTION(Client, Reliable)
+	void ClientSetOverlayMode(const FGameplayTag& NewOverlayMode);
+
 	UFUNCTION(Server, Reliable)
 	void ServerSetOverlayMode(const FGameplayTag& NewOverlayMode);
 
@@ -304,10 +334,9 @@ public:
 
 	void SetLocomotionAction(const FGameplayTag& NewLocomotionAction);
 
-private:
-	void NotifyLocomotionActionChanged(const FGameplayTag& PreviousLocomotionAction);
-
 protected:
+	virtual void NotifyLocomotionActionChanged(const FGameplayTag& PreviousLocomotionAction);
+
 	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	void OnLocomotionActionChanged(const FGameplayTag& PreviousLocomotionAction);
 
@@ -327,7 +356,7 @@ public:
 	virtual FRotator GetViewRotation() const override;
 
 private:
-	void SetReplicatedViewRotation(const FRotator& NewViewRotation);
+	void SetReplicatedViewRotation(const FRotator& NewViewRotation, bool bSendRpc);
 
 	UFUNCTION(Server, Unreliable)
 	void ServerSetReplicatedViewRotation(const FRotator& NewViewRotation);
@@ -336,7 +365,7 @@ private:
 	void OnReplicated_ReplicatedViewRotation();
 
 public:
-	void CorrectViewNetworkSmoothing(const FRotator& NewViewRotation);
+	void CorrectViewNetworkSmoothing(const FRotator& NewTargetRotation, bool bRelativeTargetRotation);
 
 public:
 	const FAlsViewState& GetViewState() const;
@@ -390,14 +419,14 @@ protected:
 
 	virtual bool RefreshCustomGroundedNotMovingRotation(float DeltaTime);
 
-	void RefreshGroundedMovingAimingRotation(float DeltaTime);
+	float CalculateGroundedMovingRotationInterpolationSpeed() const;
 
-	void RefreshGroundedNotMovingAimingRotation(float DeltaTime);
+	void RefreshGroundedAimingRotation(float DeltaTime);
 
-	float CalculateRotationInterpolationSpeed() const;
+	bool RefreshConstrainedAimingRotation(float DeltaTime, bool bApplySecondaryConstraint = false);
 
 private:
-	void ApplyRotationYawSpeed(float DeltaTime);
+	void ApplyRotationYawSpeedAnimationCurve(float DeltaTime);
 
 	void RefreshInAirRotation(float DeltaTime);
 
@@ -422,8 +451,8 @@ protected:
 	// Rolling
 
 public:
-	UFUNCTION(BlueprintCallable, Category = "ALS|Als Character")
-	void TryStartRolling(float PlayRate = 1.0f);
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character")
+	void StartRolling(float PlayRate = 1.0f);
 
 	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	UAnimMontage* SelectRollMontage();
@@ -434,12 +463,12 @@ private:
 	void StartRolling(float PlayRate, float TargetYawAngle);
 
 	UFUNCTION(Server, Reliable)
-	void ServerStartRolling(UAnimMontage* Montage, float PlayRate, float StartYawAngle, float TargetYawAngle);
+	void ServerStartRolling(UAnimMontage* Montage, float PlayRate, float InitialYawAngle, float TargetYawAngle);
 
 	UFUNCTION(NetMulticast, Reliable)
-	void MulticastStartRolling(UAnimMontage* Montage, float PlayRate, float StartYawAngle, float TargetYawAngle);
+	void MulticastStartRolling(UAnimMontage* Montage, float PlayRate, float InitialYawAngle, float TargetYawAngle);
 
-	void StartRollingImplementation(UAnimMontage* Montage, float PlayRate, float StartYawAngle, float TargetYawAngle);
+	void StartRollingImplementation(UAnimMontage* Montage, float PlayRate, float InitialYawAngle, float TargetYawAngle);
 
 	void RefreshRolling(float DeltaTime);
 
@@ -451,13 +480,13 @@ public:
 	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	bool IsMantlingAllowedToStart() const;
 
-	UFUNCTION(BlueprintCallable, Category = "ALS|Als Character", Meta = (ReturnDisplayName = "Success"))
-	bool TryStartMantlingGrounded();
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (ReturnDisplayName = "Success"))
+	bool StartMantlingGrounded();
 
 private:
-	bool TryStartMantlingInAir();
+	bool StartMantlingInAir();
 
-	bool TryStartMantling(const FAlsMantlingTraceSettings& TraceSettings);
+	bool StartMantling(const FAlsMantlingTraceSettings& TraceSettings);
 
 	UFUNCTION(Server, Reliable)
 	void ServerStartMantling(const FAlsMantlingParameters& Parameters);
@@ -471,13 +500,15 @@ protected:
 	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	UAlsMantlingSettings* SelectMantlingSettings(EAlsMantlingType MantlingType);
 
+	float CalculateMantlingStartTime(const UAlsMantlingSettings* MantlingSettings, float MantlingHeight) const;
+
 	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	void OnMantlingStarted(const FAlsMantlingParameters& Parameters);
 
 private:
 	void RefreshMantling();
 
-	void StopMantling();
+	void StopMantling(bool bStopMontage = false);
 
 protected:
 	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
@@ -486,9 +517,11 @@ protected:
 	// Ragdolling
 
 public:
+	const FAlsRagdollingState& GetRagdollingState() const;
+
 	bool IsRagdollingAllowedToStart() const;
 
-	UFUNCTION(BlueprintCallable, Category = "ALS|Als Character")
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character")
 	void StartRagdolling();
 
 private:
@@ -507,8 +540,8 @@ protected:
 public:
 	bool IsRagdollingAllowedToStop() const;
 
-	UFUNCTION(BlueprintCallable, Category = "ALS|Als Character", Meta = (ReturnDisplayName = "Success"))
-	bool TryStopRagdolling();
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (ReturnDisplayName = "Success"))
+	bool StopRagdolling();
 
 private:
 	UFUNCTION(Server, Reliable)
@@ -519,12 +552,9 @@ private:
 
 	void StopRagdollingImplementation();
 
-public:
-	void FinalizeRagdolling();
-
 protected:
 	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
-	UAnimMontage* SelectGetUpMontage(bool bRagdollFacedUpward);
+	UAnimMontage* SelectGetUpMontage(bool bRagdollFacingUpward);
 
 	UFUNCTION(BlueprintNativeEvent, Category = "Als Character")
 	void OnRagdollingEnded();
@@ -533,11 +563,13 @@ private:
 	void SetRagdollTargetLocation(const FVector& NewTargetLocation);
 
 	UFUNCTION(Server, Unreliable)
-	void ServerSetRagdollTargetLocation(const FVector_NetQuantize100& NewTargetLocation);
+	void ServerSetRagdollTargetLocation(const FVector_NetQuantize& NewTargetLocation);
 
 	void RefreshRagdolling(float DeltaTime);
 
-	void RefreshRagdollingActorTransform(float DeltaTime);
+	FVector RagdollTraceGround(bool& bGrounded) const;
+
+	void LimitRagdollSpeed() const;
 
 	// Debug
 
@@ -628,3 +660,9 @@ inline const FAlsLocomotionState& AAlsCharacter::GetLocomotionState() const
 {
 	return LocomotionState;
 }
+
+inline const FAlsRagdollingState& AAlsCharacter::GetRagdollingState() const
+{
+	return RagdollingState;
+}
+

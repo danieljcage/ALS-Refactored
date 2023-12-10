@@ -103,8 +103,23 @@ FVector UAlsCameraComponent::GetFirstPersonCameraLocation() const
 
 FVector UAlsCameraComponent::GetThirdPersonPivotLocation() const
 {
-	return (Character->GetMesh()->GetSocketLocation(Settings->ThirdPerson.FirstPivotSocketName) +
-	        Character->GetMesh()->GetSocketLocation(Settings->ThirdPerson.SecondPivotSocketName)) * 0.5f;
+	const auto* Mesh{Character->GetMesh()};
+
+	FVector FirstPivotLocation;
+
+	if (!IsValid(Mesh->GetAttachParent()) && Settings->ThirdPerson.FirstPivotSocketName == UAlsConstants::RootBoneName())
+	{
+		// The root bone location usually remains fixed when the mesh is detached, so use the capsule's bottom location here as a fallback.
+
+		FirstPivotLocation = Character->GetRootComponent()->GetComponentLocation();
+		FirstPivotLocation.Z -= Character->GetRootComponent()->Bounds.BoxExtent.Z;
+	}
+	else
+	{
+		FirstPivotLocation = Mesh->GetSocketLocation(Settings->ThirdPerson.FirstPivotSocketName);
+	}
+
+	return (FirstPivotLocation + Mesh->GetSocketLocation(Settings->ThirdPerson.SecondPivotSocketName)) * 0.5f;
 }
 
 FVector UAlsCameraComponent::GetThirdPersonTraceStartLocation() const
@@ -444,14 +459,12 @@ FVector UAlsCameraComponent::CalculateCameraTrace(const FVector& CameraTargetLoc
 	};
 
 	const auto TraceEnd{CameraTargetLocation};
-
-	const auto TraceChanel{UEngineTypes::ConvertToCollisionChannel(Settings->ThirdPerson.TraceChannel)};
 	const auto CollisionShape{FCollisionShape::MakeSphere(Settings->ThirdPerson.TraceRadius * MeshScale)};
 
 	auto TraceResult{TraceEnd};
 
 	FHitResult Hit;
-	if (GetWorld()->SweepSingleByChannel(Hit, TraceStart, TraceEnd, FQuat::Identity, TraceChanel,
+	if (GetWorld()->SweepSingleByChannel(Hit, TraceStart, TraceEnd, FQuat::Identity, Settings->ThirdPerson.TraceChannel,
 	                                     CollisionShape, {MainTraceTag, false, GetOwner()}))
 	{
 		if (!Hit.bStartPenetrating)
@@ -462,7 +475,7 @@ FVector UAlsCameraComponent::CalculateCameraTrace(const FVector& CameraTargetLoc
 		{
 			static const FName AdjustedTraceTag{FString::Printf(TEXT("%hs (Adjusted Trace)"), __FUNCTION__)};
 
-			GetWorld()->SweepSingleByChannel(Hit, TraceStart, TraceEnd, FQuat::Identity, TraceChanel,
+			GetWorld()->SweepSingleByChannel(Hit, TraceStart, TraceEnd, FQuat::Identity, Settings->ThirdPerson.TraceChannel,
 			                                 CollisionShape, {AdjustedTraceTag, false, GetOwner()});
 			if (Hit.IsValidBlockingHit())
 			{
@@ -474,7 +487,7 @@ FVector UAlsCameraComponent::CalculateCameraTrace(const FVector& CameraTargetLoc
 #if ENABLE_DRAW_DEBUG
 	if (bDisplayDebugCameraTraces)
 	{
-		UAlsUtility::DrawDebugSweptSphere(GetWorld(), TraceStart, TraceResult, Settings->ThirdPerson.TraceRadius * MeshScale,
+		UAlsUtility::DrawDebugSweepSphere(GetWorld(), TraceStart, TraceResult, Settings->ThirdPerson.TraceRadius * MeshScale,
 		                                  Hit.IsValidBlockingHit() ? FLinearColor::Red : FLinearColor::Green);
 	}
 #endif
@@ -511,8 +524,6 @@ bool UAlsCameraComponent::TryAdjustLocationBlockedByGeometry(FVector& Location, 
 	// Based on ComponentEncroachesBlockingGeometry_WithAdjustment().
 
 	const auto MeshScale{Character->GetMesh()->GetComponentScale().Z};
-
-	const auto TraceChanel{UEngineTypes::ConvertToCollisionChannel(Settings->ThirdPerson.TraceChannel)};
 	const auto CollisionShape{FCollisionShape::MakeSphere((Settings->ThirdPerson.TraceRadius + 1.0f) * MeshScale)};
 
 	static TArray<FOverlapResult> Overlaps;
@@ -525,7 +536,7 @@ bool UAlsCameraComponent::TryAdjustLocationBlockedByGeometry(FVector& Location, 
 
 	static const FName OverlapMultiTraceTag{FString::Printf(TEXT("%hs (Overlap Multi)"), __FUNCTION__)};
 
-	if (!GetWorld()->OverlapMultiByChannel(Overlaps, Location, FQuat::Identity, TraceChanel,
+	if (!GetWorld()->OverlapMultiByChannel(Overlaps, Location, FQuat::Identity, Settings->ThirdPerson.TraceChannel,
 	                                       CollisionShape, {OverlapMultiTraceTag, false, GetOwner()}))
 	{
 		return false;
@@ -538,15 +549,15 @@ bool UAlsCameraComponent::TryAdjustLocationBlockedByGeometry(FVector& Location, 
 
 	for (const auto& Overlap : Overlaps)
 	{
-		if (!Overlap.Component.IsValid() || Overlap.Component->GetCollisionResponseToChannel(TraceChanel) != ECR_Block)
+		if (!Overlap.Component.IsValid() ||
+		    Overlap.Component->GetCollisionResponseToChannel(Settings->ThirdPerson.TraceChannel) != ECR_Block)
 		{
 			continue;
 		}
 
-		const auto* OverlapBodyInstance{Overlap.Component->GetBodyInstance(NAME_None, true, Overlap.ItemIndex)};
+		const auto* OverlapBody{Overlap.Component->GetBodyInstance(NAME_None, true, Overlap.ItemIndex)};
 
-		if (OverlapBodyInstance == nullptr ||
-		    !OverlapBodyInstance->OverlapTest(Location, FQuat::Identity, CollisionShape, &MtdResult))
+		if (OverlapBody == nullptr || !OverlapBody->OverlapTest(Location, FQuat::Identity, CollisionShape, &MtdResult))
 		{
 			return false;
 		}
@@ -585,7 +596,7 @@ bool UAlsCameraComponent::TryAdjustLocationBlockedByGeometry(FVector& Location, 
 
 	static const FName FreeSpaceTraceTag{FString::Printf(TEXT("%hs (Free Space Overlap)"), __FUNCTION__)};
 
-	return !GetWorld()->OverlapBlockingTestByChannel(Location, FQuat::Identity, TraceChanel,
+	return !GetWorld()->OverlapBlockingTestByChannel(Location, FQuat::Identity, Settings->ThirdPerson.TraceChannel,
 	                                                 FCollisionShape::MakeSphere(Settings->ThirdPerson.TraceRadius * MeshScale),
 	                                                 {FreeSpaceTraceTag, false, GetOwner()});
 }

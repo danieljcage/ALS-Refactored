@@ -4,22 +4,29 @@
 
 UAlsAnimationInstanceSettings::UAlsAnimationInstanceSettings()
 {
-	InAir.GroundPredictionSweepObjectTypes =
+	InAir.GroundPredictionResponseChannels =
 	{
-		UEngineTypes::ConvertToObjectType(ECC_WorldStatic),
-		UEngineTypes::ConvertToObjectType(ECC_WorldDynamic),
-		UEngineTypes::ConvertToObjectType(ECC_Destructible)
+		ECC_WorldStatic,
+		ECC_WorldDynamic,
+		ECC_Destructible
 	};
 
-	InAir.GroundPredictionSweepResponses.SetResponse(ECC_WorldStatic, ECR_Block);
-	InAir.GroundPredictionSweepResponses.SetResponse(ECC_WorldDynamic, ECR_Block);
-	InAir.GroundPredictionSweepResponses.SetResponse(ECC_Destructible, ECR_Block);
+	InAir.GroundPredictionSweepResponses.WorldStatic = ECR_Block;
+	InAir.GroundPredictionSweepResponses.WorldDynamic = ECR_Block;
+	InAir.GroundPredictionSweepResponses.Destructible = ECR_Block;
 }
 
 #if WITH_EDITOR
 void UAlsAnimationInstanceSettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
-	InAir.PostEditChangeProperty(PropertyChangedEvent);
+	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(ThisClass, InAir))
+	{
+		InAir.PostEditChangeProperty(PropertyChangedEvent);
+	}
+	else if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(ThisClass, Feet))
+	{
+		Feet.PostEditChangeProperty(PropertyChangedEvent);
+	}
 
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 }

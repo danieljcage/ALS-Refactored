@@ -3,7 +3,6 @@
 #include "Animation/AnimSequence.h"
 #include "Utility/AlsMacros.h"
 
-// ReSharper disable once CppUnusedIncludeDirective
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AlsAnimationModifier_CopyCurves)
 
 void UAlsAnimationModifier_CopyCurves::OnApply_Implementation(UAnimSequence* Sequence)
@@ -20,7 +19,7 @@ void UAlsAnimationModifier_CopyCurves::OnApply_Implementation(UAnimSequence* Seq
 	{
 		for (const auto& Curve : SourceSequenceObject->GetCurveData().FloatCurves)
 		{
-			CopyCurve(SourceSequenceObject, Sequence, Curve.Name.DisplayName);
+			CopyCurve(SourceSequenceObject, Sequence, Curve.GetName());
 		}
 	}
 	else
@@ -37,24 +36,15 @@ void UAlsAnimationModifier_CopyCurves::OnApply_Implementation(UAnimSequence* Seq
 
 void UAlsAnimationModifier_CopyCurves::CopyCurve(UAnimSequence* SourceSequence, UAnimSequence* TargetSequence, const FName& CurveName)
 {
-	static TArray<float> CurveTimes;
-	check(CurveTimes.IsEmpty())
-
-	static TArray<float> CurveValues;
-	check(CurveValues.IsEmpty())
-
-	ON_SCOPE_EXIT
-	{
-		CurveTimes.Reset();
-		CurveValues.Reset();
-	};
-
 	if (UAnimationBlueprintLibrary::DoesCurveExist(TargetSequence, CurveName, ERawCurveTrackTypes::RCT_Float))
 	{
 		UAnimationBlueprintLibrary::RemoveCurve(TargetSequence, CurveName);
 	}
 
 	UAnimationBlueprintLibrary::AddCurve(TargetSequence, CurveName);
+
+	TArray<float> CurveTimes;
+	TArray<float> CurveValues;
 
 	UAnimationBlueprintLibrary::GetFloatKeys(SourceSequence, CurveName, CurveTimes, CurveValues);
 	UAnimationBlueprintLibrary::AddFloatCurveKeys(TargetSequence, CurveName, CurveTimes, CurveValues);

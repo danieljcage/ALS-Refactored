@@ -3,6 +3,8 @@
 #include "DrawDebugHelpers.h"
 #include "GameplayTagsManager.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
@@ -40,7 +42,7 @@ FName UAlsUtility::GetSimpleTagName(const FGameplayTag& Tag)
 
 float UAlsUtility::GetFirstPlayerPingSeconds(const UObject* WorldContext)
 {
-	const auto* World{WorldContext->GetWorld()};
+	const auto* World{IsValid(WorldContext) ? WorldContext->GetWorld() : nullptr};
 	const auto* PlayerController{IsValid(World) ? World->GetFirstPlayerController() : nullptr};
 	const auto* PlayerState{IsValid(PlayerController) ? PlayerController->PlayerState.Get() : nullptr};
 
@@ -55,14 +57,14 @@ bool UAlsUtility::TryGetMovementBaseRotationSpeed(const FBasedMovementInfo& Base
 		return false;
 	}
 
-	const auto* BodyInstance{BasedMovement.MovementBase->GetBodyInstance(BasedMovement.BoneName)};
-	if (BodyInstance == nullptr)
+	const auto* Body{BasedMovement.MovementBase->GetBodyInstance(BasedMovement.BoneName)};
+	if (Body == nullptr)
 	{
 		RotationSpeed = FRotator::ZeroRotator;
 		return false;
 	}
 
-	const auto AngularVelocityVector{BodyInstance->GetUnrealWorldAngularVelocityInRadians()};
+	const auto AngularVelocityVector{Body->GetUnrealWorldAngularVelocityInRadians()};
 	if (AngularVelocityVector.IsNearlyZero())
 	{
 		RotationSpeed = FRotator::ZeroRotator;
@@ -74,6 +76,51 @@ bool UAlsUtility::TryGetMovementBaseRotationSpeed(const FBasedMovementInfo& Base
 	RotationSpeed.Yaw = FMath::RadiansToDegrees(AngularVelocityVector.Z);
 
 	return true;
+}
+
+FTransform UAlsUtility::ExtractRootTransformFromMontage(const UAnimMontage* Montage, const float Time)
+{
+	// Based on UMotionWarpingUtilities::ExtractRootTransformFromAnimation().
+
+	if (!ALS_ENSURE(IsValid(Montage)) || !ALS_ENSURE(Montage->SlotAnimTracks.Num() > 0))
+	{
+		return FTransform::Identity;
+	}
+
+	const auto* Segment{Montage->SlotAnimTracks[0].AnimTrack.GetSegmentAtTime(Time)};
+	if (!ALS_ENSURE(Segment != nullptr))
+	{
+		return FTransform::Identity;
+	}
+
+	const auto* Sequence{Cast<UAnimSequence>(Segment->GetAnimReference())};
+	if (!ALS_ENSURE(IsValid(Sequence)))
+	{
+		return FTransform::Identity;
+	}
+
+	return Sequence->ExtractRootTrackTransform(Segment->ConvertTrackPosToAnimPos(Time), nullptr);
+}
+
+FTransform UAlsUtility::ExtractLastRootTransformFromMontage(const UAnimMontage* Montage)
+{
+	// Based on UMotionWarpingUtilities::ExtractRootTransformFromAnimation().
+
+	if (!ALS_ENSURE(IsValid(Montage)) || !ALS_ENSURE(Montage->SlotAnimTracks.Num() > 0) ||
+	    !ALS_ENSURE(Montage->SlotAnimTracks[0].AnimTrack.AnimSegments.Num() > 0))
+	{
+		return FTransform::Identity;
+	}
+
+	const auto& Segment{Montage->SlotAnimTracks[0].AnimTrack.AnimSegments.Last()};
+	const auto* Sequence{Cast<UAnimSequence>(Segment.GetAnimReference())};
+
+	if (!ALS_ENSURE(IsValid(Sequence)))
+	{
+		return FTransform::Identity;
+	}
+
+	return Sequence->ExtractRootTrackTransform(Segment.GetEndPos(), nullptr);
 }
 
 bool UAlsUtility::ShouldDisplayDebugForActor(const AActor* Actor, const FName& DisplayName)
@@ -90,7 +137,7 @@ void UAlsUtility::DrawHalfCircle(const UObject* WorldContext, const FVector& Loc
                                  const float Duration, const float Thickness, const uint8 DepthPriority)
 {
 #if ENABLE_DRAW_DEBUG
-	const auto* World{WorldContext->GetWorld()};
+	const auto* World{IsValid(WorldContext) ? WorldContext->GetWorld() : nullptr};
 	if (!ALS_ENSURE(IsValid(World)))
 	{
 		return;
@@ -122,7 +169,7 @@ void UAlsUtility::DrawQuarterCircle(const UObject* WorldContext, const FVector& 
                                     const float Duration, const float Thickness, const uint8 DepthPriority)
 {
 #if ENABLE_DRAW_DEBUG
-	const auto* World{WorldContext->GetWorld()};
+	const auto* World{IsValid(WorldContext) ? WorldContext->GetWorld() : nullptr};
 	if (!ALS_ENSURE(IsValid(World)))
 	{
 		return;
@@ -154,7 +201,7 @@ void UAlsUtility::DrawDebugSphereAlternative(const UObject* WorldContext, const 
                                              const float Thickness, const uint8 DepthPriority)
 {
 #if ENABLE_DRAW_DEBUG
-	const auto* World{WorldContext->GetWorld()};
+	const auto* World{IsValid(WorldContext) ? WorldContext->GetWorld() : nullptr};
 	if (!ALS_ENSURE(IsValid(World)))
 	{
 		return;
@@ -179,7 +226,7 @@ void UAlsUtility::DrawDebugLineTraceSingle(const UObject* WorldContext, const FV
                                            const float Duration, const float Thickness, const uint8 DepthPriority)
 {
 #if ENABLE_DRAW_DEBUG
-	const auto* World{WorldContext->GetWorld()};
+	const auto* World{IsValid(WorldContext) ? WorldContext->GetWorld() : nullptr};
 	if (!ALS_ENSURE(IsValid(World)))
 	{
 		return;
@@ -196,11 +243,11 @@ void UAlsUtility::DrawDebugLineTraceSingle(const UObject* WorldContext, const FV
 #endif
 }
 
-void UAlsUtility::DrawDebugSweptSphere(const UObject* WorldContext, const FVector& Start, const FVector& End, const float Radius,
+void UAlsUtility::DrawDebugSweepSphere(const UObject* WorldContext, const FVector& Start, const FVector& End, const float Radius,
                                        const FLinearColor& Color, const float Duration, const float Thickness, const uint8 DepthPriority)
 {
 #if ENABLE_DRAW_DEBUG
-	const auto* World{WorldContext->GetWorld()};
+	const auto* World{IsValid(WorldContext) ? WorldContext->GetWorld() : nullptr};
 	if (!ALS_ENSURE(IsValid(World)))
 	{
 		return;
@@ -225,13 +272,13 @@ void UAlsUtility::DrawDebugSweepSingleSphere(const UObject* WorldContext, const 
                                              const float Duration, const float Thickness, const uint8 DepthPriority)
 {
 #if ENABLE_DRAW_DEBUG
-	const auto* World{WorldContext->GetWorld()};
+	const auto* World{IsValid(WorldContext) ? WorldContext->GetWorld() : nullptr};
 	if (!ALS_ENSURE(IsValid(World)))
 	{
 		return;
 	}
 
-	DrawDebugSweptSphere(World, Start, End, Radius, SweepColor.ToFColor(true), Duration, Thickness, DepthPriority);
+	DrawDebugSweepSphere(World, Start, End, Radius, SweepColor.ToFColor(true), Duration, Thickness, DepthPriority);
 
 	if (bHit && Hit.bBlockingHit)
 	{
@@ -251,7 +298,7 @@ void UAlsUtility::DrawDebugSweepSingleCapsule(const UObject* WorldContext, const
                                               const float Duration, const float Thickness, const uint8 DepthPriority)
 {
 #if ENABLE_DRAW_DEBUG
-	const auto* World{WorldContext->GetWorld()};
+	const auto* World{IsValid(WorldContext) ? WorldContext->GetWorld() : nullptr};
 	if (!ALS_ENSURE(IsValid(World)))
 	{
 		return;
@@ -285,7 +332,7 @@ void UAlsUtility::DrawDebugSweepSingleCapsuleAlternative(const UObject* WorldCon
                                                          const float Duration, const float Thickness, const uint8 DepthPriority)
 {
 #if ENABLE_DRAW_DEBUG
-	const auto* World{WorldContext->GetWorld()};
+	const auto* World{IsValid(WorldContext) ? WorldContext->GetWorld() : nullptr};
 	if (!ALS_ENSURE(IsValid(World)))
 	{
 		return;

@@ -3,10 +3,12 @@
 #include "DisplayDebugHelpers.h"
 #include "DrawDebugHelpers.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/Skeleton.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
+#include "Engine/SkeletalMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Utility/AlsConstants.h"
 #include "Utility/AlsMath.h"
@@ -166,15 +168,8 @@ void AAlsCharacter::DisplayDebugCurves(const UCanvas* Canvas, const float Scale,
 	const auto RowOffset{12.0f * Scale};
 	const auto ColumnOffset{145.0f * Scale};
 
-	static TArray<FName> CurveNames;
-	check(CurveNames.IsEmpty())
-
-	ON_SCOPE_EXIT
-	{
-		CurveNames.Reset();
-	};
-
-	GetMesh()->GetAnimInstance()->GetAllCurveNames(CurveNames);
+	TArray<FName> CurveNames;
+	GetMesh()->GetSkeletalMeshAsset()->GetSkeleton()->GetCurveMetaDataNames(CurveNames);
 
 	CurveNames.Sort([](const FName& A, const FName& B) { return A.LexicalLess(B); });
 
@@ -614,11 +609,20 @@ void AAlsCharacter::DisplayDebugMantling(const UCanvas* Canvas, const float Scal
 
 	VerticalLocation += RowOffset;
 
-	static const auto FailedFreeSpaceOverlapText{LOCTEXT("FailedFreeSpaceOverlap", "Failed Free Space Overlap")};
+	static const auto FailedTargetLocationOverlapText{LOCTEXT("FailedTargetocationOverlap", "Failed Target Location Overlap")};
 
 	Text.SetColor(FLinearColor::Red);
 
-	Text.Text = FailedFreeSpaceOverlapText;
+	Text.Text = FailedTargetLocationOverlapText;
+	Text.Draw(Canvas->Canvas, {HorizontalLocation, VerticalLocation});
+
+	VerticalLocation += RowOffset;
+
+	static const auto FailedStartLocationOverlapText{LOCTEXT("FailedStartLocationOverlap", "Failed Start Location Overlap")};
+
+	Text.SetColor({1.0f, 0.5f, 0.0f});
+
+	Text.Text = FailedStartLocationOverlapText;
 	Text.Draw(Canvas->Canvas, {HorizontalLocation, VerticalLocation});
 
 	VerticalLocation += RowOffset;

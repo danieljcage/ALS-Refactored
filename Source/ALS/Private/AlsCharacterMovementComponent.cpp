@@ -205,6 +205,11 @@ void UAlsCharacterMovementComponent::OnMovementModeChanged(const EMovementMode P
 	bCrouchMaintainsBaseLocation = true;
 }
 
+bool UAlsCharacterMovementComponent::ShouldPerformAirControlForPathFollowing() const
+{
+	return !bInputBlocked && Super::ShouldPerformAirControlForPathFollowing();
+}
+
 void UAlsCharacterMovementComponent::UpdateBasedRotation(FRotator& FinalRotation, const FRotator& ReducedRotation)
 {
 	// Ignore the parent implementation of this function and provide our own, because the parent
@@ -229,6 +234,14 @@ void UAlsCharacterMovementComponent::UpdateBasedRotation(FRotator& FinalRotation
 
 		CharacterOwner->Controller->SetControlRotation(NewControlRotation);
 	}
+}
+
+bool UAlsCharacterMovementComponent::ApplyRequestedMove(const float DeltaTime, const float CurrentMaxAcceleration,
+                                                        const float MaxSpeed, const float Friction, const float BrakingDeceleration,
+                                                        FVector& RequestedAcceleration, float& RequestedSpeed)
+{
+	return !bInputBlocked && Super::ApplyRequestedMove(DeltaTime, CurrentMaxAcceleration, MaxSpeed, Friction,
+	                                                   BrakingDeceleration, RequestedAcceleration, RequestedSpeed);
 }
 
 void UAlsCharacterMovementComponent::CalcVelocity(const float DeltaTime, const float Friction,
@@ -292,8 +305,8 @@ void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 It
 		GroundFriction = GaitSettings.AccelerationAndDecelerationAndGroundFrictionCurve->FloatCurves[2].Eval(CalculateGaitAmount());
 	}
 
-	// TODO Copied with modifications from UCharacterMovementComponent::PhysWalking().
-	// TODO After the release of a new engine version, this code should be updated to match the source code.
+	// TODO Copied with modifications from UCharacterMovementComponent::PhysWalking(). After the
+	// TODO release of a new engine version, this code should be updated to match the source code.
 
 	// ReSharper disable All
 
@@ -343,7 +356,7 @@ void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 It
 		// Ensure velocity is horizontal.
 		MaintainHorizontalGroundVelocity();
 		const FVector OldVelocity = Velocity;
-		Acceleration.Z = 0.f;
+		Acceleration = FVector::VectorPlaneProject(Acceleration, -GetGravityDirection());
 
 		// Apply acceleration
 		if( !HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() )
@@ -413,7 +426,7 @@ void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 It
 		if ( bCheckLedges && !CurrentFloor.IsWalkableFloor() )
 		{
 			// calculate possible alternate movement
-			const FVector GravDir = FVector(0.f,0.f,-1.f);
+			const FVector GravDir = GetGravityDirection();
 			const FVector NewDelta = bTriedLedgeMove ? FVector::ZeroVector : GetLedgeMove(OldLocation, Delta, GravDir);
 			if ( !NewDelta.IsZero() )
 			{
@@ -481,7 +494,7 @@ void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 It
 				// The floor check failed because it started in penetration
 				// We do not want to try to move downward because the downward sweep failed, rather we'd like to try to pop out of the floor.
 				FHitResult Hit(CurrentFloor.HitResult);
-				Hit.TraceEnd = Hit.TraceStart + FVector(0.f, 0.f, MAX_FLOOR_DIST);
+				Hit.TraceEnd = Hit.TraceStart + RotateGravityToWorld(FVector(0.f, 0.f, MAX_FLOOR_DIST));
 				const FVector RequestedAdjustment = GetPenetrationAdjustment(Hit);
 				ResolvePenetration(RequestedAdjustment, Hit, UpdatedComponent->GetComponentQuat());
 				bForceNextFloorCheck = true;
@@ -583,6 +596,11 @@ FVector UAlsCharacterMovementComponent::ConsumeInputVector()
 {
 	auto InputVector{Super::ConsumeInputVector()};
 
+	if (bInputBlocked)
+	{
+		return FVector::ZeroVector;
+	}
+
 	FRotator BaseRotationSpeed;
 	if (!bIgnoreBaseRotation && UAlsUtility::TryGetMovementBaseRotationSpeed(CharacterOwner->GetBasedMovement(), BaseRotationSpeed))
 	{
@@ -612,8 +630,9 @@ void UAlsCharacterMovementComponent::ComputeFloorDist(const FVector& CapsuleLoca
 	if (DownwardSweepResult != NULL && DownwardSweepResult->IsValidBlockingHit())
 	{
 		// Only if the supplied sweep was vertical and downward.
-		if ((DownwardSweepResult->TraceStart.Z > DownwardSweepResult->TraceEnd.Z) &&
-			(DownwardSweepResult->TraceStart - DownwardSweepResult->TraceEnd).SizeSquared2D() <= UE_KINDA_SMALL_NUMBER)
+		const bool bIsDownward = RotateWorldToGravity(DownwardSweepResult->TraceStart - DownwardSweepResult->TraceEnd).Z > 0;
+		const bool bIsVertical = RotateWorldToGravity(DownwardSweepResult->TraceStart - DownwardSweepResult->TraceEnd).SizeSquared2D() <= UE_KINDA_SMALL_NUMBER;
+		if (bIsDownward && bIsVertical)
 		{
 			// Reject hits that are barely on the cusp of the radius of the capsule
 			if (IsWithinEdgeTolerance(DownwardSweepResult->Location, DownwardSweepResult->ImpactPoint, PawnRadius))
@@ -622,7 +641,7 @@ void UAlsCharacterMovementComponent::ComputeFloorDist(const FVector& CapsuleLoca
 				bSkipSweep = true;
 
 				const bool bIsWalkable = IsWalkable(*DownwardSweepResult);
-				const float FloorDist = (CapsuleLocation.Z - DownwardSweepResult->Location.Z);
+				const float FloorDist = RotateWorldToGravity(CapsuleLocation - DownwardSweepResult->Location).Z;
 				OutFloorResult.SetFromSweep(*DownwardSweepResult, FloorDist, bIsWalkable);
 
 				if (bIsWalkable)
@@ -659,7 +678,7 @@ void UAlsCharacterMovementComponent::ComputeFloorDist(const FVector& CapsuleLoca
 		FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(SweepRadius, PawnHalfHeight - ShrinkHeight);
 
 		FHitResult Hit(1.f);
-		bBlockingHit = FloorSweepTest(Hit, CapsuleLocation, CapsuleLocation + FVector(0.f,0.f,-TraceDist), CollisionChannel, CapsuleShape, QueryParams, ResponseParam);
+		bBlockingHit = FloorSweepTest(Hit, CapsuleLocation, CapsuleLocation + RotateGravityToWorld(FVector(0.f,0.f,-TraceDist)), CollisionChannel, CapsuleShape, QueryParams, ResponseParam);
 
 		// TODO Start of custom ALS code block.
 
@@ -683,7 +702,7 @@ void UAlsCharacterMovementComponent::ComputeFloorDist(const FVector& CapsuleLoca
 					CapsuleShape.Capsule.HalfHeight = FMath::Max(PawnHalfHeight - ShrinkHeight, CapsuleShape.Capsule.Radius);
 					Hit.Reset(1.f, false);
 
-					bBlockingHit = FloorSweepTest(Hit, CapsuleLocation, CapsuleLocation + FVector(0.f,0.f,-TraceDist), CollisionChannel, CapsuleShape, QueryParams, ResponseParam);
+					bBlockingHit = FloorSweepTest(Hit, CapsuleLocation, CapsuleLocation + RotateGravityToWorld(FVector(0.f,0.f,-TraceDist)), CollisionChannel, CapsuleShape, QueryParams, ResponseParam);
 				}
 			}
 
@@ -719,7 +738,7 @@ void UAlsCharacterMovementComponent::ComputeFloorDist(const FVector& CapsuleLoca
 		const float ShrinkHeight = PawnHalfHeight;
 		const FVector LineTraceStart = CapsuleLocation;
 		const float TraceDist = LineDistance + ShrinkHeight;
-		const FVector Down = FVector(0.f, 0.f, -TraceDist);
+		const FVector Down = RotateGravityToWorld(FVector(0.f, 0.f, -TraceDist));
 		QueryParams.TraceTag = SCENE_QUERY_STAT_NAME_ONLY(FloorLineTrace);
 
 		FHitResult Hit(1.f);
@@ -832,7 +851,7 @@ void UAlsCharacterMovementComponent::MoveAutonomous(const float ClientTimeStamp,
 		auto* Character{Cast<AAlsCharacter>(CharacterOwner)};
 		if (IsValid(Character))
 		{
-			Character->CorrectViewNetworkSmoothing(NewControlRotation);
+			Character->CorrectViewNetworkSmoothing(NewControlRotation, false);
 		}
 
 		PreviousControlRotation = NewControlRotation;
@@ -914,7 +933,7 @@ void UAlsCharacterMovementComponent::SetMaxAllowedGait(const FGameplayTag& NewMa
 
 void UAlsCharacterMovementComponent::RefreshMaxWalkSpeed()
 {
-	MaxWalkSpeed = GaitSettings.GetSpeedForGait(MaxAllowedGait);
+	MaxWalkSpeed = GaitSettings.GetSpeedByGait(MaxAllowedGait);
 	MaxWalkSpeedCrouched = MaxWalkSpeed;
 }
 
@@ -948,6 +967,11 @@ float UAlsCharacterMovementComponent::CalculateGaitAmount() const
 void UAlsCharacterMovementComponent::SetMovementModeLocked(const bool bNewMovementModeLocked)
 {
 	bMovementModeLocked = bNewMovementModeLocked;
+}
+
+void UAlsCharacterMovementComponent::SetInputBlocked(const bool bNewInputBlocked)
+{
+	bInputBlocked = bNewInputBlocked;
 }
 
 bool UAlsCharacterMovementComponent::TryConsumePrePenetrationAdjustmentVelocity(FVector& OutVelocity)
