@@ -42,11 +42,17 @@ namespace AlsOverlayModeTags
 	UE_DEFINE_GAMEPLAY_TAG(M4, FName{TEXTVIEW("Als.OverlayMode.M4")})
 	UE_DEFINE_GAMEPLAY_TAG(PistolOneHanded, FName{TEXTVIEW("Als.OverlayMode.PistolOneHanded")})
 	UE_DEFINE_GAMEPLAY_TAG(PistolTwoHanded, FName{TEXTVIEW("Als.OverlayMode.PistolTwoHanded")})
+	UE_DEFINE_GAMEPLAY_TAG(PistolDualWield, FName{TEXTVIEW("Als.OverlayMode.PistolDualWield")})
+	UE_DEFINE_GAMEPLAY_TAG(Knife, FName{TEXTVIEW("Als.OverlayMode.Knife")})
 	UE_DEFINE_GAMEPLAY_TAG(Bow, FName{TEXTVIEW("Als.OverlayMode.Bow")})
 	UE_DEFINE_GAMEPLAY_TAG(Torch, FName{TEXTVIEW("Als.OverlayMode.Torch")})
 	UE_DEFINE_GAMEPLAY_TAG(Binoculars, FName{TEXTVIEW("Als.OverlayMode.Binoculars")})
 	UE_DEFINE_GAMEPLAY_TAG(Box, FName{TEXTVIEW("Als.OverlayMode.Box")})
 	UE_DEFINE_GAMEPLAY_TAG(Barrel, FName{TEXTVIEW("Als.OverlayMode.Barrel")})
+	UE_DEFINE_GAMEPLAY_TAG(Throwable, FName{TEXTVIEW("Als.OverlayMode.Throwable")})
+	UE_DEFINE_GAMEPLAY_TAG(Swingable, FName{TEXTVIEW("Als.OverlayMode.Swingable")})
+	UE_DEFINE_GAMEPLAY_TAG(Smoking, FName{TEXTVIEW("Als.OverlayMode.Smoking")})
+	UE_DEFINE_GAMEPLAY_TAG(HandsBehindHead, FName{TEXTVIEW("Als.OverlayMode.HandsBehindHead")})	
 }
 
 namespace AlsLocomotionActionTags
